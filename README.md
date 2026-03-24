@@ -38,7 +38,7 @@ The output directory follows the existing zsh naming behavior:
 Build image:
 
 ```bash
-docker build -t chengyanru/dirduck .
+docker buildx build --platform linux/arm64 --load -t chengyanru/dirduck:dev .
 ```
 
 Build and publish multi-platform image (amd64 + arm64):
@@ -46,6 +46,8 @@ Build and publish multi-platform image (amd64 + arm64):
 ```bash
 zsh ./build.zsh
 ```
+
+Detailed multi-arch build instructions are in `docs/build_guide.md`.
 
 Run:
 
