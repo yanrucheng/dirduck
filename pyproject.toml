@@ -1,0 +1,17 @@
+[project]
+name = "dirduck-transcode"
+version = "0.1.0"
+description = "Batch transcode videos and images while preserving folder structure."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+dirduck-transcode = "dirduck_transcode.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
