@@ -2,9 +2,9 @@
 set -euo pipefail
 
 image_name="${IMAGE_NAME:-chengyanru/dirduck}"
-image_tag="${IMAGE_TAG:-latest}"
+image_tag="${IMAGE_TAG:-dev}"
 builder_name="${BUILDER_NAME:-dirduck-multiarch}"
-platforms="linux/amd64,linux/arm64"
+platform="${PLATFORM:-linux/arm64}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required."
@@ -25,9 +25,9 @@ fi
 docker buildx inspect --bootstrap >/dev/null
 
 docker buildx build \
-  --platform "$platforms" \
+  --platform "$platform" \
   -t "${image_name}:${image_tag}" \
-  --push \
+  --load \
   .
 
-echo "Published ${image_name}:${image_tag} for ${platforms}"
+echo "Built local image ${image_name}:${image_tag} for ${platform}"

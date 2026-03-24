@@ -41,13 +41,13 @@ Build image:
 docker buildx build --platform linux/arm64 --load -t chengyanru/dirduck:dev .
 ```
 
-Build and publish multi-platform image (amd64 + arm64):
+Build local image with the project script:
 
 ```bash
 zsh ./build.zsh
 ```
 
-Detailed multi-arch build instructions are in `docs/build_guide.md`.
+Detailed local build and manual push instructions are in `docs/build_guide.md`.
 
 Run:
 

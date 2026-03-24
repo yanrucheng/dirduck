@@ -1,110 +1,63 @@
-# dirduck Multi-Arch Docker Build Guide
+# Local Docker Build Guide
 
-This project follows a multi-architecture Docker design for `linux/amd64` and `linux/arm64` using Docker Buildx, a multi-stage Dockerfile, and `uv`.
+Use this guide to build a local image for `dirduck` quickly.
 
-## What Is Implemented
+## Default Build
 
-- Multi-stage Dockerfile with `builder` and `runtime` stages
-- Dependency locking with `uv.lock` during image build
-- Layer-cached dependency installation before copying source code
-- Minimal runtime image with non-root user
-- Buildx-based multi-arch publish flow in `build.zsh`
-
-## Prerequisites
-
-- Docker with Buildx enabled
-- Access to a container registry (for push)
-
-Verify Buildx:
-
-```bash
-docker buildx version
-```
-
-## Buildx One-Time Setup
-
-Create and bootstrap a dedicated builder:
-
-```bash
-docker buildx create --name dirduck-multiarch --driver docker-container --use
-docker buildx inspect --bootstrap
-```
-
-If the builder already exists:
-
-```bash
-docker buildx use dirduck-multiarch
-docker buildx inspect --bootstrap
-```
-
-## Local Single-Architecture Build
-
-Use `--load` to import the image into your local Docker daemon.
-
-Apple Silicon local build:
-
-```bash
-docker buildx build --platform linux/arm64 --load -t chengyanru/dirduck:dev .
-```
-
-Intel local build:
-
-```bash
-docker buildx build --platform linux/amd64 --load -t chengyanru/dirduck:dev .
-```
-
-## Multi-Architecture Publish
-
-Use the included script:
+Run from repository root:
 
 ```bash
 zsh ./build.zsh
 ```
 
-With custom image/tag:
+This builds and loads a local image:
+
+- image: `chengyanru/dirduck:dev`
+- platform: `linux/arm64`
+
+## Script Options
+
+Override defaults with environment variables:
 
 ```bash
-IMAGE_NAME=your-registry/dirduck IMAGE_TAG=v1.0.0 zsh ./build.zsh
+IMAGE_NAME=chengyanru/dirduck IMAGE_TAG=dev PLATFORM=linux/arm64 zsh ./build.zsh
 ```
 
-The script publishes a manifest list for:
+Available variables:
 
-- `linux/amd64`
-- `linux/arm64`
+- `IMAGE_NAME` default: `chengyanru/dirduck`
+- `IMAGE_TAG` default: `dev`
+- `PLATFORM` default: `linux/arm64`
+- `BUILDER_NAME` default: `dirduck-multiarch`
 
-## Manual Multi-Architecture Publish
+For Intel target build on Apple Silicon:
 
 ```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --tag your-registry/dirduck:v1.0.0 \
-  --push \
-  .
+PLATFORM=linux/amd64 zsh ./build.zsh
 ```
 
-## CI/CD
-
-The repository includes a GitHub Actions workflow at `.github/workflows/build-image.yml`.
-
-It builds and pushes `linux/amd64` + `linux/arm64` images using Buildx with remote registry cache.
-
-Required repository secrets:
-
-- `DOCKER_USERNAME`
-- `DOCKER_PASSWORD`
-
-## Run Example
+## Verify Local Image
 
 ```bash
-docker run --rm -v /path/to/media:/data chengyanru/dirduck:latest \
+docker images | grep dirduck
+```
+
+Run:
+
+```bash
+docker run --rm -v /path/to/media:/data chengyanru/dirduck:dev \
   --input /data \
   --preset slow \
   --crf 31
 ```
 
-## Validation Checklist
+## Push to Docker Hub
 
-- Confirm the image manifest contains both `amd64` and `arm64`
-- Run the image on each architecture
-- Confirm `ffmpeg` and `magick` are available in runtime
-- Confirm container starts as non-root user
+Push is manual and not handled by `build.zsh`.
+
+After local verification:
+
+```bash
+docker tag chengyanru/dirduck:dev chengyanru/dirduck:latest
+docker push chengyanru/dirduck:latest
+```
