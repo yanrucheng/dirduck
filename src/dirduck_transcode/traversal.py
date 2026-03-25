@@ -192,6 +192,19 @@ def print_summary(stats: ProcessingStats) -> None:
     )
 
 
+def print_existing_skip_batch(paths: list[Path]) -> None:
+    count = len(paths)
+    if count == 0:
+        return
+    print(f"Skipping {count} existing files:")
+    if count <= 6:
+        display_paths = paths
+    else:
+        display_paths = [*paths[:2], Path("..."), *paths[-2:]]
+    for path in display_paths:
+        print(f"  {path}")
+
+
 def run(config: TranscodeConfig) -> int:
     verify_dependencies()
     print_config(config)
@@ -203,9 +216,12 @@ def run(config: TranscodeConfig) -> int:
     stats.directories_discovered = len(
         {file_path.relative_to(config.input_path).parent for file_path in files}
     )
+    existing_skip_batch: list[Path] = []
 
     for file_path in files:
         if config.skip_keyword and config.skip_keyword in str(file_path):
+            print_existing_skip_batch(existing_skip_batch)
+            existing_skip_batch.clear()
             print(f"Skipping {file_path} as it contains {config.skip_keyword}")
             stats.files_skipped_keyword += 1
             stats.files_unchanged += 1
@@ -216,10 +232,12 @@ def run(config: TranscodeConfig) -> int:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_paths[file_path]
         if output_file.exists():
-            print(f"Output file already exists, skipping: {output_file}")
+            existing_skip_batch.append(output_file)
             stats.files_skipped_existing += 1
             stats.files_unchanged += 1
             continue
+        print_existing_skip_batch(existing_skip_batch)
+        existing_skip_batch.clear()
         result = process_file(file_path, output_file, config)
         stats.files_processed += 1
 
@@ -242,6 +260,7 @@ def run(config: TranscodeConfig) -> int:
             stats.image_input_bytes += result.source_size
             stats.image_output_bytes += result.output_size
 
+    print_existing_skip_batch(existing_skip_batch)
     print_summary(stats)
 
     return 0
