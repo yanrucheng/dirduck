@@ -30,19 +30,20 @@ docker buildx use dirduck-multiarch
 docker buildx inspect --bootstrap
 ```
 
-## Build Script Modes
+## Scripts
 
-`build.zsh` supports two modes:
+The repository provides three scripts in `./scripts`:
 
-- `single`: build one local image for one platform
-- `release`: read `./VERSION`, build both platforms, and create two local manifest tags
+- `local_build.zsh`: build one local image for one platform
+- `build.zsh`: build both local arch images using `<version>` from `./VERSION`
+- `push.zsh`: push arch images, create/push manifest tags `<version>` and `latest`
 
 Run from repository root.
 
-## Mode 1: Single-Platform Local Build
+## 1) Single-Platform Local Build
 
 ```bash
-zsh ./build.zsh single
+zsh ./scripts/local_build.zsh
 ```
 
 Defaults:
@@ -53,29 +54,27 @@ Defaults:
 Override:
 
 ```bash
-PLATFORM=linux/amd64 IMAGE_TAG=debug IMAGE_NAME=chengyanru/dirduck zsh ./build.zsh single
+PLATFORM=linux/amd64 IMAGE_TAG=debug IMAGE_NAME=chengyanru/dirduck zsh ./scripts/local_build.zsh
 ```
 
-## Mode 2: Versioned Multi-Arch Local Release Build
+## 2) Versioned Multi-Arch Local Build
 
-`release` mode does all of this automatically:
+`scripts/build.zsh` does all of this automatically:
 
 - read `<version>` from `./VERSION`
 - build `linux/amd64` image as `<version>-amd64`
 - build `linux/arm64` image as `<version>-arm64`
-- create local manifest tag `<version>`
-- create local manifest tag `latest`
 
 Run:
 
 ```bash
-zsh ./build.zsh release
+zsh ./scripts/build.zsh
 ```
 
 Optional custom image name and version file:
 
 ```bash
-IMAGE_NAME=your-dockerhub-user/dirduck VERSION_FILE=./VERSION zsh ./build.zsh release
+IMAGE_NAME=your-dockerhub-user/dirduck VERSION_FILE=./VERSION zsh ./scripts/build.zsh
 ```
 
 ## Verify Local Release Artifacts
@@ -84,27 +83,28 @@ IMAGE_NAME=your-dockerhub-user/dirduck VERSION_FILE=./VERSION zsh ./build.zsh re
 docker images | grep dirduck
 docker image inspect chengyanru/dirduck:0.1.0-amd64 --format '{{.Architecture}}'
 docker image inspect chengyanru/dirduck:0.1.0-arm64 --format '{{.Architecture}}'
-docker manifest inspect chengyanru/dirduck:0.1.0
-docker manifest inspect chengyanru/dirduck:latest
 ```
 
-## Manual Push to Docker Hub Later
+## 3) Push and Create Manifests
 
-`build.zsh` does not push. When ready, push arch-specific images first, then push both manifest tags.
+`scripts/push.zsh` does all of this:
+
+- push `<version>-amd64` and `<version>-arm64`
+- create manifest `<version>` from the two arch tags
+- create manifest `latest` from the two arch tags
+- push both manifest tags
 
 ```bash
-docker push chengyanru/dirduck:0.1.0-amd64
-docker push chengyanru/dirduck:0.1.0-arm64
+zsh ./scripts/push.zsh
 ```
 
-Push both manifest tags:
+Optional custom image name and version file:
 
 ```bash
-docker manifest push chengyanru/dirduck:0.1.0
-docker manifest push chengyanru/dirduck:latest
+IMAGE_NAME=your-dockerhub-user/dirduck VERSION_FILE=./VERSION zsh ./scripts/push.zsh
 ```
 
-Verify on registry:
+Verify on registry after push:
 
 ```bash
 docker manifest inspect chengyanru/dirduck:0.1.0

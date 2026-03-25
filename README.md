@@ -44,10 +44,22 @@ docker buildx build --platform linux/arm64 --load -t chengyanru/dirduck:dev .
 Build local image with the project script:
 
 ```bash
-zsh ./build.zsh
+zsh ./scripts/local_build.zsh
 ```
 
-Detailed local build and manual push instructions are in `docs/build_guide.md`.
+Build versioned multi-arch local images:
+
+```bash
+zsh ./scripts/build.zsh
+```
+
+Push and create manifest tags:
+
+```bash
+zsh ./scripts/push.zsh
+```
+
+Detailed instructions are in `docs/build_guide.md`.
 
 Run:
 
