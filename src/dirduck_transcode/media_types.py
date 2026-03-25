@@ -3,8 +3,37 @@ from __future__ import annotations
 from pathlib import Path
 
 
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".ts", ".webm"}
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+VIDEO_EXTENSIONS = {
+    ".3gp",
+    ".avi",
+    ".flv",
+    ".m2ts",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".mts",
+    ".mxf",
+    ".ogv",
+    ".ts",
+    ".vob",
+    ".webm",
+    ".wmv",
+}
+IMAGE_EXTENSIONS = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 
 
 def is_video(path: Path) -> bool:

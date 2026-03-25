@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from dirduck_transcode.media_types import is_image, is_video
 from dirduck_transcode.models import TranscodeConfig
+
+
+@dataclass(slots=True)
+class FileProcessResult:
+    kind: str
+    action: str
+    source_size: int
+    output_size: int
 
 
 def verify_dependencies() -> None:
@@ -26,6 +35,14 @@ def scale_filter(short_side_px: int | None) -> str | None:
 
 def run_command(command: list[str]) -> None:
     subprocess.run(command, check=True)
+
+
+def classify_file(path: Path) -> str:
+    if is_video(path):
+        return "video"
+    if is_image(path):
+        return "image"
+    return "other"
 
 
 def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None:
@@ -70,20 +87,44 @@ def compress_image(source: Path, target: Path, config: TranscodeConfig) -> None:
     run_command(command)
 
 
-def process_file(source: Path, target: Path, config: TranscodeConfig) -> None:
+def process_file(source: Path, target: Path, config: TranscodeConfig) -> FileProcessResult:
+    kind = classify_file(source)
+    source_size = source.stat().st_size
+
     if target.exists():
         print(f"Output file already exists, skipping: {target}")
-        return
+        return FileProcessResult(
+            kind=kind,
+            action="skipped_existing",
+            source_size=source_size,
+            output_size=target.stat().st_size,
+        )
 
-    if is_video(source):
+    if kind == "video":
         print(f"Transcoding video: {source}")
         transcode_video(source, target, config)
-        return
+        return FileProcessResult(
+            kind=kind,
+            action="transcoded",
+            source_size=source_size,
+            output_size=target.stat().st_size,
+        )
 
-    if is_image(source):
+    if kind == "image":
         print(f"Compressing image: {source}")
         compress_image(source, target, config)
-        return
+        return FileProcessResult(
+            kind=kind,
+            action="compressed",
+            source_size=source_size,
+            output_size=target.stat().st_size,
+        )
 
     print(f"Copying file: {source}")
     shutil.copy2(source, target)
+    return FileProcessResult(
+        kind=kind,
+        action="copied",
+        source_size=source_size,
+        output_size=source_size,
+    )
