@@ -215,14 +215,16 @@ def run(config: TranscodeConfig) -> int:
         output_dir = (config.output_path / rel_path.parent).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_paths[file_path]
+        if output_file.exists():
+            print(f"Output file already exists, skipping: {output_file}")
+            stats.files_skipped_existing += 1
+            stats.files_unchanged += 1
+            continue
         result = process_file(file_path, output_file, config)
         stats.files_processed += 1
 
         if result.action == "copied":
             stats.files_copied += 1
-            stats.files_unchanged += 1
-        elif result.action == "skipped_existing":
-            stats.files_skipped_existing += 1
             stats.files_unchanged += 1
         elif result.action == "fallback_copied":
             stats.images_fallback_copied += 1

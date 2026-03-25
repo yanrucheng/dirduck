@@ -154,15 +154,6 @@ def process_file(source: Path, target: Path, config: TranscodeConfig) -> FilePro
     kind = classify_file(source)
     source_size = source.stat().st_size
 
-    if target.exists():
-        print(f"Output file already exists, skipping: {target}")
-        return FileProcessResult(
-            kind=kind,
-            action="skipped_existing",
-            source_size=source_size,
-            output_size=target.stat().st_size,
-        )
-
     if kind == "video":
         print(f"Transcoding video: {source}")
         transcode_video(source, target, config)
