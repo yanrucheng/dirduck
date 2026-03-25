@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import signal
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -33,8 +35,57 @@ def scale_filter(short_side_px: int | None) -> str | None:
     )
 
 
-def run_command(command: list[str]) -> None:
-    subprocess.run(command, check=True)
+def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        process.wait()
+
+
+def run_command(command: list[str], *, defer_interrupt: bool = False) -> None:
+    process = subprocess.Popen(command, start_new_session=True)
+    interrupted = False
+    original_handler: signal.Handlers | None = None
+
+    if defer_interrupt:
+        def handle_interrupt(signum: int, frame: object | None) -> None:
+            del signum, frame
+            nonlocal interrupted
+            interrupted = True
+            print("Interrupt received. Waiting for current image to finish...")
+
+        original_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, handle_interrupt)
+
+    try:
+        while True:
+            try:
+                return_code = process.wait()
+                break
+            except KeyboardInterrupt:
+                if defer_interrupt:
+                    interrupted = True
+                    continue
+                terminate_process_group(process)
+                raise
+    finally:
+        if original_handler is not None:
+            signal.signal(signal.SIGINT, original_handler)
+
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, command)
+    if interrupted:
+        raise KeyboardInterrupt
 
 
 def classify_file(path: Path) -> str:
@@ -73,7 +124,12 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
             "-y",
         ]
     )
-    run_command(command)
+    try:
+        run_command(command)
+    except KeyboardInterrupt:
+        if target.exists():
+            target.unlink()
+        raise
 
 
 def compress_image(source: Path, target: Path, config: TranscodeConfig) -> None:
@@ -84,7 +140,7 @@ def compress_image(source: Path, target: Path, config: TranscodeConfig) -> None:
         str(config.image_quality),
         str(target),
     ]
-    run_command(command)
+    run_command(command, defer_interrupt=True)
 
 
 def image_fallback_target(source: Path, target: Path) -> Path:
