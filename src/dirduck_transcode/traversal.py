@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from dirduck_transcode.media_types import replace_output_extension
+from dirduck_transcode.media_types import is_image, is_video, replace_output_extension
 from dirduck_transcode.models import TranscodeConfig
 from dirduck_transcode.processors import process_file, verify_dependencies
 
@@ -29,6 +29,81 @@ class ProcessingStats:
 
 def iterate_files(input_path: Path) -> list[Path]:
     return sorted(path for path in input_path.rglob("*") if path.is_file())
+
+
+def canonical_output_extension(path: Path) -> str | None:
+    """Return the canonical output extension for a media input file."""
+    if is_video(path):
+        return ".mp4"
+    if is_image(path):
+        return ".jpg"
+    return None
+
+
+def build_collision_safe_target(
+    source: Path, base_target: Path, reserved_targets: set[Path]
+) -> Path:
+    """Create a unique output target by appending the source's original type."""
+    type_token = source.suffix.lower().lstrip(".") or "file"
+    base_name = f"{base_target.stem}-{type_token}"
+    candidate = base_target.with_name(f"{base_name}{base_target.suffix}")
+    index = 2
+    while candidate in reserved_targets:
+        candidate = base_target.with_name(f"{base_name}-{index}{base_target.suffix}")
+        index += 1
+    return candidate
+
+
+def plan_output_paths(files: list[Path], config: TranscodeConfig) -> dict[Path, Path]:
+    """Plan output paths to prevent collisions after extension normalization."""
+    sources_by_target: dict[Path, list[Path]] = {}
+
+    for file_path in files:
+        rel_path = file_path.relative_to(config.input_path)
+        output_dir = (config.output_path / rel_path.parent).resolve()
+        base_target = replace_output_extension(output_dir / file_path.name)
+        sources_by_target.setdefault(base_target, []).append(file_path)
+
+    resolved_by_source: dict[Path, Path] = {}
+    reserved_targets: set[Path] = set()
+
+    for base_target, sources in sources_by_target.items():
+        if len(sources) == 1:
+            resolved_target = base_target
+            if resolved_target in reserved_targets:
+                resolved_target = build_collision_safe_target(
+                    sources[0], base_target, reserved_targets
+                )
+            resolved_by_source[sources[0]] = resolved_target
+            reserved_targets.add(resolved_target)
+            continue
+
+        canonical_sources = [
+            source
+            for source in sources
+            if canonical_output_extension(source) == source.suffix.lower()
+        ]
+        if canonical_sources:
+            primary_source = min(canonical_sources)
+        else:
+            primary_source = min(sources)
+
+        primary_target = base_target
+        if primary_target in reserved_targets:
+            primary_target = build_collision_safe_target(
+                primary_source, base_target, reserved_targets
+            )
+        resolved_by_source[primary_source] = primary_target
+        reserved_targets.add(primary_target)
+
+        for source in sorted(sources):
+            if source == primary_source:
+                continue
+            unique_target = build_collision_safe_target(source, base_target, reserved_targets)
+            resolved_by_source[source] = unique_target
+            reserved_targets.add(unique_target)
+
+    return resolved_by_source
 
 
 def format_bytes(value: int) -> str:
@@ -95,6 +170,7 @@ def run(config: TranscodeConfig) -> int:
     config.output_path.mkdir(parents=True, exist_ok=True)
     stats = ProcessingStats()
     files = iterate_files(config.input_path)
+    output_paths = plan_output_paths(files, config)
     stats.files_discovered = len(files)
     stats.directories_discovered = len(
         {file_path.relative_to(config.input_path).parent for file_path in files}
@@ -110,7 +186,7 @@ def run(config: TranscodeConfig) -> int:
         rel_path = file_path.relative_to(config.input_path)
         output_dir = (config.output_path / rel_path.parent).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = replace_output_extension(output_dir / file_path.name)
+        output_file = output_paths[file_path]
         result = process_file(file_path, output_file, config)
         stats.files_processed += 1
 
