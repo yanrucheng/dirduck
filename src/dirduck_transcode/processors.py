@@ -87,6 +87,13 @@ def compress_image(source: Path, target: Path, config: TranscodeConfig) -> None:
     run_command(command)
 
 
+def image_fallback_target(source: Path, target: Path) -> Path:
+    source_extension = source.suffix.lower()
+    if not source_extension:
+        return target.with_suffix(".png")
+    return target.with_suffix(source_extension)
+
+
 def process_file(source: Path, target: Path, config: TranscodeConfig) -> FileProcessResult:
     kind = classify_file(source)
     source_size = source.stat().st_size
@@ -112,13 +119,34 @@ def process_file(source: Path, target: Path, config: TranscodeConfig) -> FilePro
 
     if kind == "image":
         print(f"Compressing image: {source}")
-        compress_image(source, target, config)
-        return FileProcessResult(
-            kind=kind,
-            action="compressed",
-            source_size=source_size,
-            output_size=target.stat().st_size,
-        )
+        try:
+            compress_image(source, target, config)
+            return FileProcessResult(
+                kind=kind,
+                action="compressed",
+                source_size=source_size,
+                output_size=target.stat().st_size,
+            )
+        except subprocess.CalledProcessError:
+            fallback_target = image_fallback_target(source, target)
+            if target.exists():
+                target.unlink()
+            if fallback_target.exists():
+                print(f"Image conversion fallback target exists, skipping: {fallback_target}")
+                return FileProcessResult(
+                    kind=kind,
+                    action="fallback_skipped_existing",
+                    source_size=source_size,
+                    output_size=fallback_target.stat().st_size,
+                )
+            print(f"Image conversion failed for JPG, copying original as fallback: {source}")
+            shutil.copy2(source, fallback_target)
+            return FileProcessResult(
+                kind=kind,
+                action="fallback_copied",
+                source_size=source_size,
+                output_size=fallback_target.stat().st_size,
+            )
 
     print(f"Copying file: {source}")
     shutil.copy2(source, target)

@@ -47,4 +47,6 @@ def is_image(path: Path) -> bool:
 def replace_output_extension(path: Path) -> Path:
     if is_video(path):
         return path.with_suffix(".mp4")
+    if is_image(path):
+        return path.with_suffix(".jpg")
     return path

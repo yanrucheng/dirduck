@@ -19,6 +19,8 @@ class ProcessingStats:
     files_unchanged: int = 0
     videos_transcoded: int = 0
     images_compressed: int = 0
+    images_fallback_copied: int = 0
+    images_fallback_skipped_existing: int = 0
     video_input_bytes: int = 0
     video_output_bytes: int = 0
     image_input_bytes: int = 0
@@ -81,6 +83,10 @@ def print_summary(stats: ProcessingStats) -> None:
         f"input: {format_bytes(stats.image_input_bytes)}, output: {format_bytes(stats.image_output_bytes)}, "
         f"compression rate: {format_compression_rate(stats.image_input_bytes, stats.image_output_bytes)}"
     )
+    print(
+        f"Image fallback: copied-original {stats.images_fallback_copied}, "
+        f"skipped-existing {stats.images_fallback_skipped_existing}"
+    )
 
 
 def run(config: TranscodeConfig) -> int:
@@ -113,6 +119,12 @@ def run(config: TranscodeConfig) -> int:
             stats.files_unchanged += 1
         elif result.action == "skipped_existing":
             stats.files_skipped_existing += 1
+            stats.files_unchanged += 1
+        elif result.action == "fallback_copied":
+            stats.images_fallback_copied += 1
+            stats.files_unchanged += 1
+        elif result.action == "fallback_skipped_existing":
+            stats.images_fallback_skipped_existing += 1
             stats.files_unchanged += 1
 
         if result.kind == "video" and result.action == "transcoded":
