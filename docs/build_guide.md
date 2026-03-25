@@ -1,63 +1,112 @@
-# Local Docker Build Guide
+# Multi-Arch Local Build Guide
 
-Use this guide to build a local image for `dirduck` quickly.
+This guide focuses on local multi-arch builds first, then manual Docker Hub push later.
 
-## Default Build
+## Project Version Source
 
-Run from repository root:
+Project release version is stored in:
 
-```bash
-zsh ./build.zsh
+```text
+./VERSION
 ```
 
-This builds and loads a local image:
+Example:
 
-- image: `chengyanru/dirduck:dev`
-- platform: `linux/arm64`
-
-## Script Options
-
-Override defaults with environment variables:
-
-```bash
-IMAGE_NAME=chengyanru/dirduck IMAGE_TAG=dev PLATFORM=linux/arm64 zsh ./build.zsh
+```text
+0.1.0
 ```
 
-Available variables:
-
-- `IMAGE_NAME` default: `chengyanru/dirduck`
-- `IMAGE_TAG` default: `dev`
-- `PLATFORM` default: `linux/arm64`
-- `BUILDER_NAME` default: `dirduck-multiarch`
-
-For Intel target build on Apple Silicon:
+## One-Time Buildx Setup
 
 ```bash
-PLATFORM=linux/amd64 zsh ./build.zsh
+docker buildx create --name dirduck-multiarch --driver docker-container --use
+docker buildx inspect --bootstrap
 ```
 
-## Verify Local Image
+If already created:
 
 ```bash
-docker images | grep dirduck
+docker buildx use dirduck-multiarch
+docker buildx inspect --bootstrap
 ```
+
+## Build Script Modes
+
+`build.zsh` supports two modes:
+
+- `single`: build one local image for one platform
+- `release`: read `./VERSION`, build both platforms, and create two local manifest tags
+
+Run from repository root.
+
+## Mode 1: Single-Platform Local Build
+
+```bash
+zsh ./build.zsh single
+```
+
+Defaults:
+
+- platform: host-based (`linux/amd64` on Intel, `linux/arm64` on Apple Silicon)
+- image tag: `dev`
+
+Override:
+
+```bash
+PLATFORM=linux/amd64 IMAGE_TAG=debug IMAGE_NAME=chengyanru/dirduck zsh ./build.zsh single
+```
+
+## Mode 2: Versioned Multi-Arch Local Release Build
+
+`release` mode does all of this automatically:
+
+- read `<version>` from `./VERSION`
+- build `linux/amd64` image as `<version>-amd64`
+- build `linux/arm64` image as `<version>-arm64`
+- create local manifest tag `<version>`
+- create local manifest tag `latest`
 
 Run:
 
 ```bash
-docker run --rm -v /path/to/media:/data chengyanru/dirduck:dev \
-  --input /data \
-  --preset slow \
-  --crf 31
+zsh ./build.zsh release
 ```
 
-## Push to Docker Hub
-
-Push is manual and not handled by `build.zsh`.
-
-After local verification:
+Optional custom image name and version file:
 
 ```bash
-docker tag chengyanru/dirduck:dev chengyanru/dirduck:latest
-docker push chengyanru/dirduck:latest
+IMAGE_NAME=your-dockerhub-user/dirduck VERSION_FILE=./VERSION zsh ./build.zsh release
+```
+
+## Verify Local Release Artifacts
+
+```bash
+docker images | grep dirduck
+docker image inspect chengyanru/dirduck:0.1.0-amd64 --format '{{.Architecture}}'
+docker image inspect chengyanru/dirduck:0.1.0-arm64 --format '{{.Architecture}}'
+docker manifest inspect chengyanru/dirduck:0.1.0
+docker manifest inspect chengyanru/dirduck:latest
+```
+
+## Manual Push to Docker Hub Later
+
+`build.zsh` does not push. When ready, push arch-specific images first, then push both manifest tags.
+
+```bash
+docker push chengyanru/dirduck:0.1.0-amd64
+docker push chengyanru/dirduck:0.1.0-arm64
+```
+
+Push both manifest tags:
+
+```bash
+docker manifest push chengyanru/dirduck:0.1.0
+docker manifest push chengyanru/dirduck:latest
+```
+
+Verify on registry:
+
+```bash
+docker manifest inspect chengyanru/dirduck:0.1.0
+docker manifest inspect chengyanru/dirduck:latest
 ```
