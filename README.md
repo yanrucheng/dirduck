@@ -19,18 +19,18 @@ uv sync
 
 ```bash
 uv run dirduck-transcode \
-  --input /path/to/input \
-  --preset slow \
-  --crf 31 \
-  --shortsidepx 1080 \
-  --image-quality 7 \
-  --skip 原片
+  -i /path/to/input \
+  -p slow \
+  -c 31 \
+  -r 1080 \
+  -q 85 \
+  -s 原片
 ```
 
 The output directory follows the existing zsh naming behavior:
 
 ```text
-<input>_h265[_<shortside>p]_<preset>_crf<crf>[_imgQ<image-quality>]
+<input>_h265[_<resolution>]_<preset>_crf<crf>[_imgQ<image-quality>]
 ```
 
 ## Docker
@@ -65,9 +65,10 @@ Run:
 
 ```bash
 docker run --rm -v /path/to/media:/data chengyanru/dirduck \
-  --input /data \
-  --preset slow \
-  --crf 31
+  -i /data \
+  -p slow \
+  -c 31 \
+  -r 1080
 ```
 
 With a local alias like:

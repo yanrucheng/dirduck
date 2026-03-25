@@ -1,9 +1,29 @@
 from __future__ import annotations
 
 import argparse
+from enum import Enum
 from pathlib import Path
 
 from dirduck_transcode.models import TranscodeConfig
+
+
+class ResolutionPreset(Enum):
+    P240 = ("240", 240)
+    P360 = ("360", 360)
+    P480 = ("480", 480)
+    P720 = ("720", 720)
+    P1080 = ("1080", 1080)
+    P1440 = ("1440", 1440)
+    P4K = ("4k", 2160)
+    P8K = ("8k", 4320)
+
+    def __init__(self, cli_value: str, short_side_px: int) -> None:
+        self.cli_value = cli_value
+        self.short_side_px = short_side_px
+
+
+RESOLUTION_CHOICES = [preset.cli_value for preset in ResolutionPreset]
+RESOLUTION_BY_CLI_VALUE = {preset.cli_value: preset for preset in ResolutionPreset}
 
 
 def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
@@ -12,64 +32,78 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         description="Batch transcode videos and images into smaller files while preserving the input folder structure.",
         epilog=(
             "Example:\n"
-            "  dirduck-transcode --input /data/media --preset slow --crf 31 --shortsidepx 1080 --image-quality 7\n"
+            "  dirduck-transcode -i /data/media -p slow -c 31 -r 1080 -q 85 -s 原片\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("-i", "--input", required=True, type=Path, help="Input directory to process.")
-    parser.add_argument("--preset", default="slow", help="FFmpeg libx265 preset.")
-    parser.add_argument("--crf", type=int, default=31, help="FFmpeg CRF value for video compression.")
+    parser.add_argument("-i", "--input-dir", required=True, type=Path, help="Directory that contains files to transcode.")
+    parser.add_argument(
+        "-p",
+        "--video-preset",
+        default="slow",
+        help="x265 preset for video encoding speed/efficiency tradeoff (for example: ultrafast, medium, slow).",
+    )
+    parser.add_argument(
+        "-c",
+        "--video-crf",
+        type=int,
+        default=31,
+        help="x265 Constant Rate Factor for video quality and size; lower values keep higher quality.",
+    )
     parser.add_argument(
         "-s",
-        "--skip",
+        "--skip-keyword",
         dest="skip_keyword",
         default="原片",
-        help="Skip files and directories whose path contains this keyword.",
+        help="Skip files and folders when their path contains this text.",
     )
     parser.add_argument(
-        "--shortsidepx",
-        type=int,
+        "-r",
+        "--resolution",
+        choices=RESOLUTION_CHOICES,
         default=None,
-        help="Optional max pixel size for the short side in video scaling.",
+        help="Target short-side resolution preset. Supported: 240, 360, 480, 720, 1080, 1440, 4k, 8k.",
     )
     parser.add_argument(
+        "-q",
         "--image-quality",
         type=int,
-        default=7,
-        help="ImageMagick quality value applied during image compression.",
+        default=85,
+        help="Image compression quality passed to ImageMagick (1-100, higher keeps better quality).",
     )
     args = parser.parse_args(argv)
 
-    input_path = args.input.expanduser().resolve()
+    input_path = args.input_dir.expanduser().resolve()
     if not input_path.exists() or not input_path.is_dir():
-        parser.error("--input must point to an existing directory.")
-    if args.shortsidepx is not None and args.shortsidepx <= 0:
-        parser.error("--shortsidepx must be a positive integer.")
+        parser.error("--input-dir must point to an existing directory.")
     if args.image_quality <= 0:
         parser.error("--image-quality must be greater than 0.")
+    if args.image_quality > 100:
+        parser.error("--image-quality must be less than or equal to 100.")
+    resolution_preset = RESOLUTION_BY_CLI_VALUE.get(args.resolution)
 
     return TranscodeConfig(
         input_path=input_path,
-        preset=args.preset,
-        crf=args.crf,
+        preset=args.video_preset,
+        crf=args.video_crf,
         skip_keyword=args.skip_keyword,
-        short_side_px=args.shortsidepx,
+        short_side_px=resolution_preset.short_side_px if resolution_preset is not None else None,
         image_quality=args.image_quality,
         output_path=build_output_path(
             input_path=input_path,
-            preset=args.preset,
-            crf=args.crf,
-            short_side_px=args.shortsidepx,
+            preset=args.video_preset,
+            crf=args.video_crf,
+            resolution=args.resolution,
             image_quality=args.image_quality,
         ),
     )
 
 
 def build_output_path(
-    input_path: Path, preset: str, crf: int, short_side_px: int | None, image_quality: int
+    input_path: Path, preset: str, crf: int, resolution: str | None, image_quality: int
 ) -> Path:
-    resolution_postfix = f"_{short_side_px}p" if short_side_px else ""
-    quality_postfix = f"_imgQ{image_quality}" if image_quality != 7 else ""
+    resolution_postfix = f"_{resolution}" if resolution else ""
+    quality_postfix = f"_imgQ{image_quality}" if image_quality != 85 else ""
     return input_path.with_name(
         f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}"
     )

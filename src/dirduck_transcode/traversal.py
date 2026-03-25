@@ -16,7 +16,7 @@ def print_config(config: TranscodeConfig) -> None:
         f" and resolution-{config.short_side_px}p" if config.short_side_px is not None else ""
     )
     quality_description = (
-        f" with image quality-{config.image_quality}" if config.image_quality != 7 else ""
+        f" with image quality-{config.image_quality}" if config.image_quality != 85 else ""
     )
     print(
         f"Using input {config.input_path}, preset-{config.preset} and crf-{config.crf}"
