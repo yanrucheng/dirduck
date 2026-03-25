@@ -1,10 +1,14 @@
-# Docker Multi-Arch Builds for Python with Buildx & uv
+# Python Docker Multi-Arch Routine (Buildx + uv)
 
-A concise reference for building `linux/amd64` and `linux/arm64` container images for Python 3.12 projects using Docker Buildx, multi-stage builds, and `uv`.
+Standard workflow for new Python projects:
 
-## Project Directory Layout
+- local single-platform dev build
+- local versioned multi-arch build artifacts
+- manual push + manifest publish
 
-A recommended structure for a Python CLI or service using a `src` layout.
+Target platforms: `linux/amd64` and `linux/arm64`.
+
+## Standard Layout
 
 ```text
 /my-python-app
@@ -12,98 +16,90 @@ A recommended structure for a Python CLI or service using a `src` layout.
 ├── Dockerfile
 ├── pyproject.toml
 ├── uv.lock
-├── src/
-│   └── my_app/
-│       ├── __init__.py
-│       └── main.py
-└── tests/
-    └── ...
+├── VERSION
+├── scripts/
+│   ├── local_build.zsh
+│   ├── build.zsh
+│   └── push.zsh
+└── src/
+    └── my_app/
 ```
 
-## Key Dockerfile Traits
+## Contract
 
-- **Multi-stage:** A `builder` stage to install dependencies and a minimal `runtime` stage.
-- **Cache-friendly Layering:** Copy `pyproject.toml` and `uv.lock` first, install dependencies, then copy `src`. This prevents re-installing dependencies on every code change.
-- **Minimal Runtime:** Use a `-slim` base image for the final stage to reduce image size and attack surface.
-- **Non-root User:** Create and switch to a dedicated non-root user for security.
-- **Virtual Environment:** Create a virtual environment inside the image to isolate dependencies and make `PATH` updates clean.
-- **Platform-Independent:** The Dockerfile is generic and works for any architecture (`amd64`, `arm64`). The target platform is specified at build time.
-- **Clear Entrypoint/Cmd:** Use `ENTRYPOINT` or `CMD` to define how the application runs.
-- **Environment Variables:** Set common variables like `PYTHONUNBUFFERED` and `PATH`.
-- **Optional Healthcheck:** Add a `HEALTHCHECK` for services that need it.
+- `VERSION` is the release source of truth.
+- `scripts/local_build.zsh` builds one platform image for local testing.
+- `scripts/build.zsh` reads `VERSION` and builds two local images:
+  - `<version>-amd64`
+  - `<version>-arm64`
+- `scripts/push.zsh` pushes both arch tags, then publishes two manifest tags:
+  - `<version>`
+  - `latest`
 
-## Example Dockerfile
+## Dockerfile Baseline
 
-This two-stage Dockerfile uses `uv` to manage dependencies and creates a minimal, secure runtime image.
+Use a platform-independent multi-stage Dockerfile.
 
 ```dockerfile
-# ---- Builder Stage ----
-# Installs dependencies into a virtual environment using uv
 FROM python:3.12-slim AS builder
 
+ARG PYPI_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    PIP_INDEX_URL=${PYPI_MIRROR} \
+    UV_INDEX_URL=${PYPI_MIRROR}
+
 WORKDIR /app
 
-# Install uv, the fast Python package installer
-RUN pip install uv
+RUN pip install --no-cache-dir uv
+RUN python -m venv /app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
 
-# Create a virtual environment
-RUN python -m venv .venv
-ENV PATH="/app/.venv/bin:$PATH"
+COPY pyproject.toml uv.lock README.md /app/
+RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy only the dependency definitions and install them
-# This layer is cached as long as the lock file doesn't change
-COPY pyproject.toml uv.lock ./
-RUN uv sync --system-deps
+COPY src /app/src
+RUN uv sync --frozen --no-dev
 
-# Copy the application source code
-COPY src/ ./src/
-
-# ---- Runtime Stage ----
-# Creates a minimal final image with a non-root user
 FROM python:3.12-slim AS runtime
 
+ARG DEBIAN_MIRROR=mirrors.tuna.tsinghua.edu.cn
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-# Create a non-root user for security
+RUN sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g; s|security.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg imagemagick ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system nonroot && adduser --system --ingroup nonroot nonroot
+
+COPY --from=builder --chown=nonroot:nonroot /app/.venv /app/.venv
+COPY --from=builder --chown=nonroot:nonroot /app/src /app/src
+
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONPATH="/app/src"
+
 USER nonroot
 
-# Copy the virtual environment from the builder stage
-COPY --from=builder --chown=nonroot:nonroot /app/.venv ./.venv
-
-# Copy the application source code from the builder stage
-COPY --from=builder --chown=nonroot:nonroot /app/src ./src
-
-# Set environment variables for the runtime
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/src"
-ENV PYTHONUNBUFFERED=1
-
-# (Optional) Expose a port if it's a web service
-# EXPOSE 8000
-
-# (Optional) Add a healthcheck for services
-# HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-#   CMD [ "python", "-m", "my_app.health" ]
-
-# Define the entrypoint for the container
-ENTRYPOINT [ "python", "-m", "my_app.main" ]
+ENTRYPOINT ["python", "-m", "my_app.main"]
 ```
 
-## .dockerignore Essentials
-
-Prevent unnecessary files from being included in the build context to speed up builds and avoid security risks.
+## .dockerignore Baseline
 
 ```ignore
-# Git
 .git/
 .gitignore
 
-# Docker
 .dockerignore
 Dockerfile
 
-# Python caches and virtual environments
 __pycache__/
 *.pyc
 *.pyo
@@ -111,78 +107,155 @@ __pycache__/
 venv/
 env/
 
-# IDE and OS files
 .idea/
 .vscode/
 .DS_Store
 
-# Test files
 tests/
 pytest.ini
 .pytest_cache/
 ```
 
-## Build Commands
+## Script Templates
 
-### Local Development
+### 1) scripts/local_build.zsh
 
-First, create and switch to a `buildx` builder instance (one-time setup):
+Use for fast local dev image build.
+
 ```bash
-docker buildx create --name my-builder --use
-docker buildx inspect --bootstrap
-```
+#!/bin/zsh
+set -euo pipefail
 
-Build a single-architecture image and load it into the local Docker daemon:
-```bash
-# For Apple Silicon (arm64)
-docker buildx build --platform linux/arm64 --load -t my-app:dev .
+image_name="${IMAGE_NAME:-your-dockerhub-user/my-app}"
+image_tag="${IMAGE_TAG:-dev}"
+builder_name="${BUILDER_NAME:-my-app-multiarch}"
+host_arch="$(uname -m)"
 
-# For Intel (amd64)
-docker buildx build --platform linux/amd64 --load -t my-app:dev .
-```
+if [[ "$host_arch" == "x86_64" || "$host_arch" == "amd64" ]]; then
+  default_platform="linux/amd64"
+elif [[ "$host_arch" == "arm64" || "$host_arch" == "aarch64" ]]; then
+  default_platform="linux/arm64"
+else
+  default_platform="linux/amd64"
+fi
 
-Build a multi-arch image and push it directly to a container registry:
-```bash
+platform="${PLATFORM:-$default_platform}"
+
+docker buildx inspect "$builder_name" >/dev/null 2>&1 || docker buildx create --name "$builder_name" --driver docker-container --use >/dev/null
+docker buildx use "$builder_name" >/dev/null
+docker buildx inspect --bootstrap >/dev/null
+
 docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --tag your-registry/my-app:1.0.0 \
-  --push \
+  --platform "$platform" \
+  -t "${image_name}:${image_tag}" \
+  --load \
   .
 ```
 
-### CI/CD Snippet
+### 2) scripts/build.zsh
 
-In a CI/CD pipeline (e.g., GitHub Actions), use remote caching to speed up builds.
+Use for local versioned multi-arch artifacts.
 
-```yaml
-# .github/workflows/build-image.yml snippet
-- name: Set up Docker Buildx
-  uses: docker/setup-buildx-action@v3
+```bash
+#!/bin/zsh
+set -euo pipefail
 
-- name: Log in to Registry
-  uses: docker/login-action@v3
-  with:
-    registry: your-registry
-    username: ${{ secrets.DOCKER_USERNAME }}
-    password: ${{ secrets.DOCKER_PASSWORD }}
+image_name="${IMAGE_NAME:-your-dockerhub-user/my-app}"
+builder_name="${BUILDER_NAME:-my-app-multiarch}"
+version_file="${VERSION_FILE:-VERSION}"
 
-- name: Build and push multi-arch image
-  uses: docker/build-push-action@v5
-  with:
-    context: .
-    platforms: linux/amd64,linux/arm64
-    push: true
-    tags: |
-      your-registry/my-app:${{ github.sha }}
-      your-registry/my-app:latest
-    cache-from: type=registry,ref=your-registry/my-app:build-cache
-    cache-to: type=registry,ref=your-registry/my-app:build-cache,mode=max
+project_version="$(tr -d '[:space:]' < "$version_file")"
+
+docker buildx inspect "$builder_name" >/dev/null 2>&1 || docker buildx create --name "$builder_name" --driver docker-container --use >/dev/null
+docker buildx use "$builder_name" >/dev/null
+docker buildx inspect --bootstrap >/dev/null
+
+docker buildx build --platform linux/amd64 -t "${image_name}:${project_version}-amd64" --load .
+docker buildx build --platform linux/arm64 -t "${image_name}:${project_version}-arm64" --load .
 ```
 
-## Notes
+### 3) scripts/push.zsh
 
-- **Distroless:** For even smaller and more secure images, consider using a `gcr.io/distroless/python3-debian12` base for the `runtime` stage. This requires copying only the necessary application files and dependencies, as distroless images contain no shell or package manager.
-- **Testing:** After pushing a multi-arch image, test it on both `amd64` and `arm64` platforms to ensure full compatibility.
-- **Reproducibility:** `uv.lock` is crucial. It pins the exact versions of all dependencies, ensuring that builds are deterministic and reproducible across different environments.
-- **Security:** Always run containers as a **non-root user** and only copy the minimal set of required files into the final image.
+Use only when ready to publish.
+
+```bash
+#!/bin/zsh
+set -euo pipefail
+
+image_name="${IMAGE_NAME:-your-dockerhub-user/my-app}"
+version_file="${VERSION_FILE:-VERSION}"
+project_version="$(tr -d '[:space:]' < "$version_file")"
+
+amd64_tag="${project_version}-amd64"
+arm64_tag="${project_version}-arm64"
+
+docker push "${image_name}:${amd64_tag}"
+docker push "${image_name}:${arm64_tag}"
+
+docker manifest rm "${image_name}:${project_version}" >/dev/null 2>&1 || true
+docker manifest rm "${image_name}:latest" >/dev/null 2>&1 || true
+
+docker manifest create "${image_name}:${project_version}" \
+  --amend "${image_name}:${amd64_tag}" \
+  --amend "${image_name}:${arm64_tag}"
+docker manifest annotate "${image_name}:${project_version}" "${image_name}:${amd64_tag}" --os linux --arch amd64
+docker manifest annotate "${image_name}:${project_version}" "${image_name}:${arm64_tag}" --os linux --arch arm64
+
+docker manifest create "${image_name}:latest" \
+  --amend "${image_name}:${amd64_tag}" \
+  --amend "${image_name}:${arm64_tag}"
+docker manifest annotate "${image_name}:latest" "${image_name}:${amd64_tag}" --os linux --arch amd64
+docker manifest annotate "${image_name}:latest" "${image_name}:${arm64_tag}" --os linux --arch arm64
+
+docker manifest push "${image_name}:${project_version}"
+docker manifest push "${image_name}:latest"
 ```
+
+## Operational Routine
+
+### Step 0: Set version
+
+```bash
+echo "0.1.0" > VERSION
+```
+
+### Step 1: Local single-platform test
+
+```bash
+zsh ./scripts/local_build.zsh
+```
+
+### Step 2: Build local multi-arch release artifacts
+
+```bash
+zsh ./scripts/build.zsh
+```
+
+### Step 3: Publish when ready
+
+```bash
+zsh ./scripts/push.zsh
+```
+
+## Verification
+
+Before push:
+
+```bash
+docker image inspect your-dockerhub-user/my-app:0.1.0-amd64 --format '{{.Architecture}}'
+docker image inspect your-dockerhub-user/my-app:0.1.0-arm64 --format '{{.Architecture}}'
+```
+
+After push:
+
+```bash
+docker manifest inspect your-dockerhub-user/my-app:0.1.0
+docker manifest inspect your-dockerhub-user/my-app:latest
+```
+
+## Rules
+
+- Do not build manifests before arch tags are pushed.
+- Keep Dockerfile platform-neutral; choose platform only at build time.
+- Always build from `uv.lock` for reproducibility.
+- Always run runtime container as non-root.
