@@ -32,22 +32,35 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         description="Batch transcode videos and images into smaller files while preserving the input folder structure.",
         epilog=(
             "Example:\n"
-            "  dirduck-transcode -i /data/media -p slow -c 31 -r 1080 -q 85 -s 原片\n"
+            "  dirduck-transcode -i /data/media -o /data/output -p medium -c 32 -r 1080 -q 70 -s 原片\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("-i", "--input-dir", required=True, type=Path, help="Directory that contains files to transcode.")
+    parser.add_argument(
+        "-i",
+        "--input-dir",
+        required=True,
+        type=Path,
+        help="Directory that contains files to transcode.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Optional output directory. If omitted, output path is derived from the input directory and encode settings.",
+    )
     parser.add_argument(
         "-p",
         "--video-preset",
-        default="slow",
+        default="medium",
         help="x265 preset for video encoding speed/efficiency tradeoff (for example: ultrafast, medium, slow).",
     )
     parser.add_argument(
         "-c",
         "--video-crf",
         type=int,
-        default=31,
+        default=32,
         help="x265 Constant Rate Factor for video quality and size; lower values keep higher quality.",
     )
     parser.add_argument(
@@ -55,20 +68,20 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         "--skip-keyword",
         dest="skip_keyword",
         default="原片",
-        help="Skip files and folders when their path contains this text.",
+        help="Skip files and folders when their path contains this text. System junk files are always skipped by default.",
     )
     parser.add_argument(
         "-r",
         "--resolution",
         choices=RESOLUTION_CHOICES,
-        default=None,
+        default="1080",
         help="Target short-side resolution preset. Supported: 240, 360, 480, 720, 1080, 1440, 4k, 8k.",
     )
     parser.add_argument(
         "-q",
         "--image-quality",
         type=int,
-        default=85,
+        default=70,
         help="Image compression quality passed to ImageMagick (1-100, higher keeps better quality).",
     )
     args = parser.parse_args(argv)
@@ -80,7 +93,20 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         parser.error("--image-quality must be greater than 0.")
     if args.image_quality > 100:
         parser.error("--image-quality must be less than or equal to 100.")
+    if args.output_dir is not None and args.output_dir.exists() and not args.output_dir.is_dir():
+        parser.error("--output-dir must point to a directory path.")
     resolution_preset = RESOLUTION_BY_CLI_VALUE.get(args.resolution)
+    output_path = (
+        args.output_dir.expanduser().resolve()
+        if args.output_dir is not None
+        else build_output_path(
+            input_path=input_path,
+            preset=args.video_preset,
+            crf=args.video_crf,
+            resolution=args.resolution,
+            image_quality=args.image_quality,
+        )
+    )
 
     return TranscodeConfig(
         input_path=input_path,
@@ -89,13 +115,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         skip_keyword=args.skip_keyword,
         short_side_px=resolution_preset.short_side_px if resolution_preset is not None else None,
         image_quality=args.image_quality,
-        output_path=build_output_path(
-            input_path=input_path,
-            preset=args.video_preset,
-            crf=args.video_crf,
-            resolution=args.resolution,
-            image_quality=args.image_quality,
-        ),
+        output_path=output_path,
     )
 
 
@@ -103,7 +123,7 @@ def build_output_path(
     input_path: Path, preset: str, crf: int, resolution: str | None, image_quality: int
 ) -> Path:
     resolution_postfix = f"_{resolution}" if resolution else ""
-    quality_postfix = f"_imgQ{image_quality}" if image_quality != 85 else ""
+    quality_postfix = f"_imgQ{image_quality}" if image_quality != 70 else ""
     return input_path.with_name(
         f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}"
     )

@@ -7,6 +7,21 @@ from dirduck_transcode.media_types import is_image, is_video, replace_output_ext
 from dirduck_transcode.models import TranscodeConfig
 from dirduck_transcode.processors import process_file, verify_dependencies
 
+DEFAULT_SYSTEM_SKIP_EXACT_NAMES = frozenset(
+    {
+        ".DS_Store",
+        ".Spotlight-V100",
+        ".TemporaryItems",
+        ".Trashes",
+        ".fseventsd",
+        "Thumbs.db",
+        "Desktop.ini",
+        "Icon\r",
+        "__MACOSX",
+    }
+)
+DEFAULT_SYSTEM_SKIP_PREFIXES = ("._",)
+
 
 @dataclass(slots=True)
 class ProcessingStats:
@@ -27,8 +42,21 @@ class ProcessingStats:
     image_output_bytes: int = 0
 
 
+def should_skip_system_name(name: str) -> bool:
+    return name in DEFAULT_SYSTEM_SKIP_EXACT_NAMES or name.startswith(
+        DEFAULT_SYSTEM_SKIP_PREFIXES
+    )
+
+
 def iterate_files(input_path: Path) -> list[Path]:
-    return sorted(path for path in input_path.rglob("*") if path.is_file())
+    files: list[Path] = []
+    for root, dir_names, file_names in input_path.walk(on_error=lambda _: None):
+        dir_names[:] = [name for name in dir_names if not should_skip_system_name(name)]
+        for name in file_names:
+            if should_skip_system_name(name):
+                continue
+            files.append(root / name)
+    return sorted(files)
 
 
 def canonical_output_extension(path: Path) -> str | None:
@@ -128,7 +156,7 @@ def print_config(config: TranscodeConfig) -> None:
         f" and resolution-{config.short_side_px}p" if config.short_side_px is not None else ""
     )
     quality_description = (
-        f" with image quality-{config.image_quality}" if config.image_quality != 85 else ""
+        f" with image quality-{config.image_quality}" if config.image_quality != 70 else ""
     )
     print(
         f"Using input {config.input_path}, preset-{config.preset} and crf-{config.crf}"
