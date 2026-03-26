@@ -33,7 +33,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         description="Batch transcode videos and images into smaller files while preserving the input folder structure.",
         epilog=(
             "Example:\n"
-            "  dirduck-transcode -i /data/media -o /data/output -p medium -c 32 -r 1080 -q 70 -s 原片\n"
+            "  dirduck-transcode -i /data/media -od /data/output -p medium -c 32 -r 1080 -q 70 -s 原片\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -44,12 +44,20 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         type=Path,
         help="Directory that contains files to transcode.",
     )
-    parser.add_argument(
-        "-o",
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument(
+        "-od",
         "--output-dir",
         type=Path,
         default=None,
         help="Optional output directory. If omitted, output path is derived from the input directory and encode settings.",
+    )
+    output_group.add_argument(
+        "-o",
+        "--output-parent-dir",
+        type=Path,
+        default=None,
+        help="Optional parent directory for the derived output directory name.",
     )
     parser.add_argument(
         "-p",
@@ -105,6 +113,12 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         parser.error("--threads must be greater than 0.")
     if args.output_dir is not None and args.output_dir.exists() and not args.output_dir.is_dir():
         parser.error("--output-dir must point to a directory path.")
+    if (
+        args.output_parent_dir is not None
+        and args.output_parent_dir.exists()
+        and not args.output_parent_dir.is_dir()
+    ):
+        parser.error("--output-parent-dir must point to a directory path.")
     resolution_preset = RESOLUTION_BY_CLI_VALUE.get(args.resolution)
     output_path = (
         args.output_dir.expanduser().resolve()
@@ -115,6 +129,11 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
             crf=args.video_crf,
             resolution=args.resolution,
             image_quality=args.image_quality,
+            output_parent_dir=(
+                args.output_parent_dir.expanduser().resolve()
+                if args.output_parent_dir is not None
+                else None
+            ),
         )
     )
 
@@ -131,10 +150,16 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
 
 
 def build_output_path(
-    input_path: Path, preset: str, crf: int, resolution: str | None, image_quality: int
+    input_path: Path,
+    preset: str,
+    crf: int,
+    resolution: str | None,
+    image_quality: int,
+    output_parent_dir: Path | None,
 ) -> Path:
     resolution_postfix = f"_{resolution}" if resolution else ""
     quality_postfix = f"_imgQ{image_quality}" if image_quality != 70 else ""
-    return input_path.with_name(
-        f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}"
-    )
+    output_dir_name = f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}"
+    if output_parent_dir is not None:
+        return output_parent_dir / output_dir_name
+    return input_path.with_name(output_dir_name)

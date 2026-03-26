@@ -3,12 +3,13 @@ from __future__ import annotations
 import subprocess
 import sys
 from dirduck_transcode.argparser import parse_args
-from dirduck_transcode.traversal import run
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
         config = parse_args(argv)
+        from dirduck_transcode.traversal import run
+
         return run(config)
     except subprocess.CalledProcessError as error:
         print(f"Command failed with exit code {error.returncode}: {' '.join(error.cmd)}", file=sys.stderr)

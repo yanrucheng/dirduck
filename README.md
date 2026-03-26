@@ -33,6 +33,11 @@ The output directory follows the existing zsh naming behavior:
 <input>_h265[_<resolution>]_<preset>_crf<crf>[_imgQ<image-quality>]
 ```
 
+You can control output location with either:
+
+- `-od/--output-dir`: set the full output directory path directly.
+- `-o/--output-parent-dir`: keep the derived output directory name, but place it under a custom parent directory.
+
 ## Docker
 
 Build image:
