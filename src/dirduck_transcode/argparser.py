@@ -116,6 +116,9 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         short_side_px=resolution_preset.short_side_px if resolution_preset is not None else None,
         image_quality=args.image_quality,
         output_path=output_path,
+        max_video_jobs=1,
+        max_image_jobs=4,
+        max_image_jobs_during_video=0,
     )
 
 

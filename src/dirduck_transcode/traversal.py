@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -205,6 +206,44 @@ def print_existing_skip_batch(paths: list[Path]) -> None:
         print(f"  {path}")
 
 
+def apply_result_to_stats(stats: ProcessingStats, result) -> None:
+    stats.files_processed += 1
+    if result.action == "copied":
+        stats.files_copied += 1
+        stats.files_unchanged += 1
+    elif result.action == "fallback_copied":
+        stats.images_fallback_copied += 1
+        stats.files_unchanged += 1
+    elif result.action == "fallback_skipped_existing":
+        stats.images_fallback_skipped_existing += 1
+        stats.files_unchanged += 1
+
+    if result.kind == "video" and result.action == "transcoded":
+        stats.videos_transcoded += 1
+        stats.video_input_bytes += result.source_size
+        stats.video_output_bytes += result.output_size
+    elif result.kind == "image" and result.action == "compressed":
+        stats.images_compressed += 1
+        stats.image_input_bytes += result.source_size
+        stats.image_output_bytes += result.output_size
+
+
+def process_images_in_parallel(
+    image_tasks: list[tuple[Path, Path]], config: TranscodeConfig, stats: ProcessingStats
+) -> None:
+    if not image_tasks:
+        return
+    worker_count = max(1, config.max_image_jobs)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {
+            executor.submit(process_file, source, target, config): (source, target)
+            for source, target in image_tasks
+        }
+        for future in as_completed(future_map):
+            result = future.result()
+            apply_result_to_stats(stats, result)
+
+
 def run(config: TranscodeConfig) -> int:
     verify_dependencies()
     print_config(config)
@@ -217,6 +256,16 @@ def run(config: TranscodeConfig) -> int:
         {file_path.relative_to(config.input_path).parent for file_path in files}
     )
     existing_skip_batch: list[Path] = []
+    video_tasks: list[tuple[Path, Path]] = []
+    image_tasks: list[tuple[Path, Path]] = []
+    other_tasks: list[tuple[Path, Path]] = []
+
+    print(
+        "Scheduling with "
+        f"max_video_jobs={config.max_video_jobs}, "
+        f"max_image_jobs={config.max_image_jobs}, "
+        f"max_image_jobs_during_video={config.max_image_jobs_during_video}"
+    )
 
     for file_path in files:
         if config.skip_keyword and config.skip_keyword in str(file_path):
@@ -236,31 +285,30 @@ def run(config: TranscodeConfig) -> int:
             stats.files_skipped_existing += 1
             stats.files_unchanged += 1
             continue
-        print_existing_skip_batch(existing_skip_batch)
-        existing_skip_batch.clear()
-        result = process_file(file_path, output_file, config)
-        stats.files_processed += 1
-
-        if result.action == "copied":
-            stats.files_copied += 1
-            stats.files_unchanged += 1
-        elif result.action == "fallback_copied":
-            stats.images_fallback_copied += 1
-            stats.files_unchanged += 1
-        elif result.action == "fallback_skipped_existing":
-            stats.images_fallback_skipped_existing += 1
-            stats.files_unchanged += 1
-
-        if result.kind == "video" and result.action == "transcoded":
-            stats.videos_transcoded += 1
-            stats.video_input_bytes += result.source_size
-            stats.video_output_bytes += result.output_size
-        elif result.kind == "image" and result.action == "compressed":
-            stats.images_compressed += 1
-            stats.image_input_bytes += result.source_size
-            stats.image_output_bytes += result.output_size
+        kind = "other"
+        if is_video(file_path):
+            kind = "video"
+        elif is_image(file_path):
+            kind = "image"
+        if kind == "video":
+            video_tasks.append((file_path, output_file))
+        elif kind == "image":
+            image_tasks.append((file_path, output_file))
+        else:
+            other_tasks.append((file_path, output_file))
 
     print_existing_skip_batch(existing_skip_batch)
+
+    for file_path, output_file in video_tasks:
+        result = process_file(file_path, output_file, config)
+        apply_result_to_stats(stats, result)
+
+    process_images_in_parallel(image_tasks, config, stats)
+
+    for file_path, output_file in other_tasks:
+        result = process_file(file_path, output_file, config)
+        apply_result_to_stats(stats, result)
+
     print_summary(stats)
 
     return 0
