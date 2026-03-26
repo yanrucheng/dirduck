@@ -97,6 +97,8 @@ def classify_file(path: Path) -> str:
 
 
 def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None:
+    video_threads = max(1, config.processing_threads)
+    x265_params = f"pools={video_threads}:wpp=1:lookahead-slices=4"
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -112,8 +114,10 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
         [
             "-c:v",
             "libx265",
+            "-x265-params",
+            x265_params,
             "-threads",
-            str(config.processing_threads),
+            str(video_threads),
             "-preset",
             config.preset,
             "-crf",
