@@ -97,8 +97,12 @@ def classify_file(path: Path) -> str:
 
 
 def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None:
+    """Transcode a video file to HEVC using libx265 with thread-pool-based parallelism."""
     video_threads = max(1, config.processing_threads)
-    x265_params = f"pools={video_threads}:wpp=1:lookahead-slices=4"
+    x265_params = (
+        f"pools={video_threads}:frame-threads={min(video_threads, 4)}"
+        f":wpp=1:lookahead-slices=4"
+    )
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -116,8 +120,6 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
             "libx265",
             "-x265-params",
             x265_params,
-            "-threads",
-            str(video_threads),
             "-preset",
             config.preset,
             "-crf",
