@@ -112,6 +112,8 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
         [
             "-c:v",
             "libx265",
+            "-threads",
+            str(config.processing_threads),
             "-preset",
             config.preset,
             "-crf",

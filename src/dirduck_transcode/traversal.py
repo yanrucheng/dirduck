@@ -22,6 +22,7 @@ DEFAULT_SYSTEM_SKIP_EXACT_NAMES = frozenset(
     }
 )
 DEFAULT_SYSTEM_SKIP_PREFIXES = ("._",)
+IMAGE_PARALLEL_WORKERS = 4
 
 
 @dataclass(slots=True)
@@ -164,6 +165,7 @@ def print_config(config: TranscodeConfig) -> None:
         f"{resolution_description}{quality_description}"
     )
     print(f"Output path: {config.output_path}")
+    print(f"Video threads: {config.processing_threads}")
 
 
 def print_summary(stats: ProcessingStats) -> None:
@@ -233,7 +235,7 @@ def process_images_in_parallel(
 ) -> None:
     if not image_tasks:
         return
-    worker_count = max(1, config.max_image_jobs)
+    worker_count = IMAGE_PARALLEL_WORKERS
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
             executor.submit(process_file, source, target, config): (source, target)
@@ -259,13 +261,6 @@ def run(config: TranscodeConfig) -> int:
     video_tasks: list[tuple[Path, Path]] = []
     image_tasks: list[tuple[Path, Path]] = []
     other_tasks: list[tuple[Path, Path]] = []
-
-    print(
-        "Scheduling with "
-        f"max_video_jobs={config.max_video_jobs}, "
-        f"max_image_jobs={config.max_image_jobs}, "
-        f"max_image_jobs_during_video={config.max_image_jobs_during_video}"
-    )
 
     for file_path in files:
         if config.skip_keyword and config.skip_keyword in str(file_path):
@@ -298,6 +293,11 @@ def run(config: TranscodeConfig) -> int:
             other_tasks.append((file_path, output_file))
 
     print_existing_skip_batch(existing_skip_batch)
+
+    if video_tasks and image_tasks:
+        print("Scheduling policy: mixed input detected, pause image processing while videos run.")
+    elif image_tasks and not video_tasks:
+        print(f"Scheduling policy: pure image input, run up to {IMAGE_PARALLEL_WORKERS} images in parallel.")
 
     for file_path, output_file in video_tasks:
         result = process_file(file_path, output_file, config)

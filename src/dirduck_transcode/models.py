@@ -13,6 +13,4 @@ class TranscodeConfig:
     short_side_px: int | None
     image_quality: int
     output_path: Path
-    max_video_jobs: int
-    max_image_jobs: int
-    max_image_jobs_during_video: int
+    processing_threads: int

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from enum import Enum
 from pathlib import Path
 
@@ -84,6 +85,13 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         default=70,
         help="Image compression quality passed to ImageMagick (1-100, higher keeps better quality).",
     )
+    parser.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        default=max(1, (os.cpu_count() or 1) - 1),
+        help="Maximum processing threads for video transcoding. Default is CPU cores minus one.",
+    )
     args = parser.parse_args(argv)
 
     input_path = args.input_dir.expanduser().resolve()
@@ -93,6 +101,8 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         parser.error("--image-quality must be greater than 0.")
     if args.image_quality > 100:
         parser.error("--image-quality must be less than or equal to 100.")
+    if args.threads <= 0:
+        parser.error("--threads must be greater than 0.")
     if args.output_dir is not None and args.output_dir.exists() and not args.output_dir.is_dir():
         parser.error("--output-dir must point to a directory path.")
     resolution_preset = RESOLUTION_BY_CLI_VALUE.get(args.resolution)
@@ -116,9 +126,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         short_side_px=resolution_preset.short_side_px if resolution_preset is not None else None,
         image_quality=args.image_quality,
         output_path=output_path,
-        max_video_jobs=1,
-        max_image_jobs=4,
-        max_image_jobs_during_video=0,
+        processing_threads=args.threads,
     )
 
 
