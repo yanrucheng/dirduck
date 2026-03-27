@@ -94,6 +94,13 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         help="Image compression quality passed to ImageMagick (1-100, higher keeps better quality).",
     )
     parser.add_argument(
+        "-f",
+        "--max-fps",
+        type=int,
+        default=30,
+        help="Maximum output framerate. Videos with higher framerate will be capped; lower framerate videos stay unchanged.",
+    )
+    parser.add_argument(
         "-t",
         "--threads",
         type=int,
@@ -111,6 +118,8 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         parser.error("--image-quality must be less than or equal to 100.")
     if args.threads <= 0:
         parser.error("--threads must be greater than 0.")
+    if args.max_fps <= 0:
+        parser.error("--max-fps must be greater than 0.")
     if args.output_dir is not None and args.output_dir.exists() and not args.output_dir.is_dir():
         parser.error("--output-dir must point to a directory path.")
     if (
@@ -129,6 +138,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
             crf=args.video_crf,
             resolution=args.resolution,
             image_quality=args.image_quality,
+            max_fps=args.max_fps,
             output_parent_dir=(
                 args.output_parent_dir.expanduser().resolve()
                 if args.output_parent_dir is not None
@@ -144,6 +154,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         skip_keyword=args.skip_keyword,
         short_side_px=resolution_preset.short_side_px if resolution_preset is not None else None,
         image_quality=args.image_quality,
+        max_fps=args.max_fps,
         output_path=output_path,
         processing_threads=args.threads,
     )
@@ -155,11 +166,13 @@ def build_output_path(
     crf: int,
     resolution: str | None,
     image_quality: int,
+    max_fps: int,
     output_parent_dir: Path | None,
 ) -> Path:
     resolution_postfix = f"_{resolution}" if resolution else ""
     quality_postfix = f"_imgQ{image_quality}" if image_quality != 70 else ""
-    output_dir_name = f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}"
+    fps_postfix = f"_fps{max_fps}" if max_fps != 30 else ""
+    output_dir_name = f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}{fps_postfix}"
     if output_parent_dir is not None:
         return output_parent_dir / output_dir_name
     return input_path.with_name(output_dir_name)

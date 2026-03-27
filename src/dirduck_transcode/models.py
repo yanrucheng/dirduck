@@ -12,5 +12,6 @@ class TranscodeConfig:
     skip_keyword: str
     short_side_px: int | None
     image_quality: int
+    max_fps: int | None
     output_path: Path
     processing_threads: int

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import signal
 import shutil
@@ -96,6 +97,32 @@ def classify_file(path: Path) -> str:
     return "other"
 
 
+def probe_fps(source: Path) -> float | None:
+    """Return the average framerate of the first video stream, or None on failure."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=avg_frame_rate",
+                "-of", "json",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        data = json.loads(result.stdout)
+        rate_str: str = data["streams"][0]["avg_frame_rate"]
+        num, den = rate_str.split("/")
+        if int(den) == 0:
+            return None
+        return int(num) / int(den)
+    except (subprocess.TimeoutExpired, KeyError, IndexError, ValueError, ZeroDivisionError):
+        return None
+
+
 def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None:
     """Transcode a video file to HEVC using libx265 with thread-pool-based parallelism."""
     video_threads = max(1, config.processing_threads)
@@ -114,6 +141,10 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
     filter_arg = scale_filter(config.short_side_px)
     if filter_arg:
         command.extend(["-vf", filter_arg])
+    if config.max_fps is not None:
+        source_fps = probe_fps(source)
+        if source_fps is not None and source_fps > config.max_fps:
+            command.extend(["-r", str(config.max_fps)])
     command.extend(
         [
             "-c:v",
