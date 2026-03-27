@@ -5,6 +5,7 @@ import os
 import signal
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,11 +55,20 @@ def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
 
 
 def run_command(command: list[str], *, defer_interrupt: bool = False) -> None:
+    """Run *command* in a subprocess, optionally deferring SIGINT until it completes.
+
+    Signal handlers can only be installed from the main thread.  When called
+    from a worker thread (e.g. inside a ``ThreadPoolExecutor``), the
+    ``defer_interrupt`` mechanism is silently skipped and the function falls
+    back to the regular ``KeyboardInterrupt`` path.
+    """
     process = subprocess.Popen(command, start_new_session=True)
     interrupted = False
     original_handler: signal.Handlers | None = None
 
-    if defer_interrupt:
+    can_handle_signals = threading.current_thread() is threading.main_thread()
+
+    if defer_interrupt and can_handle_signals:
         def handle_interrupt(signum: int, frame: object | None) -> None:
             del signum, frame
             nonlocal interrupted
@@ -74,7 +84,7 @@ def run_command(command: list[str], *, defer_interrupt: bool = False) -> None:
                 return_code = process.wait()
                 break
             except KeyboardInterrupt:
-                if defer_interrupt:
+                if defer_interrupt and can_handle_signals:
                     interrupted = True
                     continue
                 terminate_process_group(process)
