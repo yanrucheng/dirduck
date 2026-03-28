@@ -12,13 +12,21 @@ from dirduck_transcode.platform._base import (
 class AppleMacNativeProfile(VideoEncodeProfile):
     """Hardware HEVC encoding via Apple VideoToolbox on Apple Silicon macOS.
 
-    The full pipeline stays on hardware surfaces for maximum throughput:
+    Pipeline layout:
 
-    * ``-hwaccel videotoolbox -hwaccel_output_format videotoolbox`` keeps
-      decoded frames on hardware surfaces.
-    * ``scale_vt`` performs resolution scaling directly on VideoToolbox
-      surfaces without downloading to system memory.
-    * ``hevc_videotoolbox`` encodes directly from hardware surfaces.
+    * ``-hwaccel videotoolbox`` enables hardware-accelerated H.264/HEVC
+      decoding via the Apple media engine.  Decoded frames are automatically
+      transferred to system memory so they can pass through software filters
+      without compatibility issues.
+    * A Lanczos ``scale`` filter handles resolution changes in software.
+      Using the software scaler (instead of ``scale_vt``) avoids a known
+      ffmpeg limitation where mid-stream colour-parameter changes trigger
+      filter-graph reconfiguration that fails when the graph contains
+      hardware-surface filters (``Impossible to convert between …
+      'Parsed_scale_vt_0' and 'auto_scale_0'``).
+    * ``hevc_videotoolbox`` encodes the frames on the Apple media engine.
+      The encoder transparently uploads CPU frames to hardware; the decode
+      + encode path still runs at ~6 × real-time on M-series chips.
 
     The CRF value provided by the user is mapped to a VideoToolbox quality
     parameter (``-q:v``).
@@ -33,15 +41,15 @@ class AppleMacNativeProfile(VideoEncodeProfile):
         return "hevc_videotoolbox"
 
     def build_input_args(self) -> list[str]:
-        """Return full zero-copy hwaccel args — always keep frames on VT surfaces."""
-        return ["-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox"]
+        """Return hwaccel args for VideoToolbox decode with CPU-accessible frames."""
+        return ["-hwaccel", "videotoolbox"]
 
     def build_scale_filter(self, short_side_px: int | None) -> str | None:
-        """Return a VideoToolbox-native ``scale_vt`` filter string."""
+        """Return a Lanczos-based software scale filter string."""
         if short_side_px is None:
             return None
         w, h = short_side_expressions(short_side_px)
-        return f"scale_vt=w='{w}':h='{h}'"
+        return f"scale='{w}':'{h}':flags=lanczos:param0=3"
 
     def build_encode_args(self, crf: int, preset: str, threads: int) -> list[str]:
         vt_quality = crf_to_vt_quality(crf)
@@ -49,6 +57,7 @@ class AppleMacNativeProfile(VideoEncodeProfile):
             "-c:v", "hevc_videotoolbox",
             "-q:v", str(vt_quality),
             "-allow_sw", "0",
+            "-pix_fmt", "yuv420p",
             "-profile:v", "main",
             "-tag:v", "hvc1",
         ]
