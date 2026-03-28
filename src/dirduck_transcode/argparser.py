@@ -114,6 +114,13 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         default=max(1, (os.cpu_count() or 1) - 1),
         help="Processing threads for software video encoding. Ignored when hardware encoder is selected. Default is CPU cores minus one.",
     )
+    parser.add_argument(
+        "-sw",
+        "--software",
+        action="store_true",
+        default=False,
+        help="Force software (libx265) encoding even when a hardware encoder (e.g. VideoToolbox) is available.",
+    )
     args = parser.parse_args(argv)
 
     input_path = args.input_dir.expanduser().resolve()
@@ -146,6 +153,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
             resolution=args.resolution,
             image_quality=args.image_quality,
             max_fps=args.max_fps,
+            force_software=args.software,
             output_parent_dir=(
                 args.output_parent_dir.expanduser().resolve()
                 if args.output_parent_dir is not None
@@ -164,6 +172,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         max_fps=args.max_fps,
         output_path=output_path,
         processing_threads=args.threads,
+        force_software=args.software,
     )
 
 
@@ -174,12 +183,14 @@ def build_output_path(
     resolution: str | None,
     image_quality: int,
     max_fps: int,
+    force_software: bool,
     output_parent_dir: Path | None,
 ) -> Path:
     resolution_postfix = f"_{resolution}" if resolution else ""
     quality_postfix = f"_imgQ{image_quality}" if image_quality != 70 else ""
     fps_postfix = f"_fps{max_fps}" if max_fps != 30 else ""
-    output_dir_name = f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}{fps_postfix}"
+    sw_postfix = "_sw" if force_software else ""
+    output_dir_name = f"{input_path.name}_h265{resolution_postfix}_{preset}_crf{crf}{quality_postfix}{fps_postfix}{sw_postfix}"
     if output_parent_dir is not None:
         return output_parent_dir / output_dir_name
     return input_path.with_name(output_dir_name)

@@ -260,7 +260,7 @@ def process_images_in_parallel(
 def run(config: TranscodeConfig) -> int:
     verify_dependencies()
     platform_info = detect_platform()
-    profile = select_encode_profile(platform_info)
+    profile = select_encode_profile(platform_info, force_software=config.force_software)
     print(format_platform_summary(platform_info, profile))
     print_config(config, profile)
     config.output_path.mkdir(parents=True, exist_ok=True)

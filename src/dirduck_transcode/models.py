@@ -15,3 +15,4 @@ class TranscodeConfig:
     max_fps: int | None
     output_path: Path
     processing_threads: int
+    force_software: bool

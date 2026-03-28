@@ -10,15 +10,18 @@ from dirduck_transcode.platform._intel_docker_linux import IntelDockerLinuxProfi
 from dirduck_transcode.platform._intel_mac_native import IntelMacNativeProfile
 
 
-def select_encode_profile(info: PlatformInfo) -> VideoEncodeProfile:
+def select_encode_profile(info: PlatformInfo, *, force_software: bool = False) -> VideoEncodeProfile:
     """Choose the encode profile that matches the detected platform.
 
     Mapping:
       Docker + arm64/aarch64              -> AppleDockerLinuxProfile
       Docker + x86_64/other               -> IntelDockerLinuxProfile
-      macOS  + arm64 + VT available       -> AppleMacNativeProfile
+      macOS  + arm64 + VT available       -> AppleMacNativeProfile  (unless force_software)
       macOS  + x86_64/other               -> IntelMacNativeProfile
       Anything else (unknown)             -> IntelDockerLinuxProfile (safe fallback)
+
+    When *force_software* is ``True``, hardware-accelerated profiles are
+    bypassed and the corresponding software profile is returned instead.
     """
     if info.in_docker:
         if info.arch in ("arm64", "aarch64"):
@@ -27,7 +30,8 @@ def select_encode_profile(info: PlatformInfo) -> VideoEncodeProfile:
 
     if info.system == "Darwin":
         if (
-            info.arch == "arm64"
+            not force_software
+            and info.arch == "arm64"
             and "videotoolbox" in info.available_hwaccels
             and "hevc_videotoolbox" in info.available_encoders
         ):
