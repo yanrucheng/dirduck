@@ -2,7 +2,7 @@
 
 ## Background
 
-`dirduck-transcode` supports both software encoding (`libx265`) and hardware encoding
+`dirduck` supports both software encoding (`libx265`) and hardware encoding
 (`hevc_videotoolbox` on native macOS). The user-facing quality knob is a single CRF
 value (0-51, lower = better), which maps directly to libx265's CRF parameter. For
 VideoToolbox, this CRF must be translated to the encoder's `-q:v` parameter (1-100,

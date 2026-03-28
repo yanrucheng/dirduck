@@ -268,8 +268,11 @@ def select_encode_profile(info: PlatformInfo) -> VideoEncodeProfile:
 
 def format_platform_summary(info: PlatformInfo, profile: VideoEncodeProfile) -> str:
     """Return a multi-line summary for startup logging."""
+    from dirduck_transcode import __version__
+
     docker_label = " (Docker)" if info.in_docker else " (native)"
     lines = [
+        f"dirduck v{__version__}",
         f"Platform: {info.system} {info.arch}{docker_label}",
         f"Available hwaccels: {', '.join(sorted(info.available_hwaccels)) or 'none'}",
         f"Selected encode profile: {profile.name}",

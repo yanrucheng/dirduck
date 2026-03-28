@@ -1,4 +1,4 @@
-# dirduck-transcode
+# dirduck
 
 Batch transcode videos and images into smaller size while preserving the exact input folder structure.
 
@@ -18,7 +18,7 @@ uv sync
 ## Usage
 
 ```bash
-uv run dirduck-transcode \
+uv run dirduck \
   -i /path/to/input \
   -p slow \
   -c 31 \

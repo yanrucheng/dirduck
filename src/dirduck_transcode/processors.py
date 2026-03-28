@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from dirduck_transcode import __version__
 from dirduck_transcode.media_types import is_image, is_video
 from dirduck_transcode.models import TranscodeConfig
 from dirduck_transcode.platform import VideoEncodeProfile
@@ -20,6 +22,16 @@ class FileProcessResult:
     action: str
     source_size: int
     output_size: int
+
+
+def format_command(command: list[str]) -> str:
+    """Format a command list into a shell-safe string for logging."""
+    return " ".join(shlex.quote(arg) for arg in command)
+
+
+def log_command(command: list[str]) -> None:
+    """Print the full command with the script version for traceability."""
+    print(f"[dirduck v{__version__}] $ {format_command(command)}")
 
 
 def verify_dependencies() -> None:
@@ -165,6 +177,7 @@ def transcode_video(
         profile.build_encode_args(config.crf, config.preset, config.processing_threads)
     )
     command.extend(["-c:a", "copy", str(target), "-y"])
+    log_command(command)
     try:
         run_command(command)
     except KeyboardInterrupt:
@@ -181,6 +194,7 @@ def compress_image(source: Path, target: Path, config: TranscodeConfig) -> None:
         str(config.image_quality),
         str(target),
     ]
+    log_command(command)
     run_command(command, defer_interrupt=True)
 
 

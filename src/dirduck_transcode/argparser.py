@@ -5,6 +5,7 @@ import os
 from enum import Enum
 from pathlib import Path
 
+from dirduck_transcode import __version__
 from dirduck_transcode.models import TranscodeConfig
 
 
@@ -29,13 +30,19 @@ RESOLUTION_BY_CLI_VALUE = {preset.cli_value: preset for preset in ResolutionPres
 
 def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
     parser = argparse.ArgumentParser(
-        prog="dirduck-transcode",
-        description="Batch transcode videos and images into smaller files while preserving the input folder structure.",
+        prog="dirduck",
+        description=f"dirduck v{__version__}\nBatch transcode videos and images into smaller files while preserving the input folder structure.",
         epilog=(
             "Example:\n"
-            "  dirduck-transcode -i /data/media -od /data/output -p medium -c 32 -r 1080 -q 70 -s 原片\n"
+            "  dirduck -i /data/media -od /data/output -p medium -c 32 -r 1080 -q 70 -s 原片\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "-i",
