@@ -69,7 +69,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         "-c",
         "--video-crf",
         type=int,
-        default=32,
+        default=28,
         help="Quality target (lower = higher quality). Mapped to CRF for libx265 or quality level for hardware encoders.",
     )
     parser.add_argument(
