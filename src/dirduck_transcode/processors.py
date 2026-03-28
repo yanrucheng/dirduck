@@ -41,15 +41,6 @@ def verify_dependencies() -> None:
         raise RuntimeError("ImageMagick (magick) is required but was not found in PATH.")
 
 
-def scale_filter(short_side_px: int | None) -> str | None:
-    if short_side_px is None:
-        return None
-    return (
-        f"scale='if(lt(iw,ih),min({short_side_px},iw),-2)':"
-        f"'if(lt(iw,ih),-2,min({short_side_px},ih))':flags=lanczos:param0=3"
-    )
-
-
 def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -150,7 +141,7 @@ def transcode_video(
     source: Path, target: Path, config: TranscodeConfig, profile: VideoEncodeProfile,
 ) -> None:
     """Transcode a video file to HEVC using the selected encode profile."""
-    filter_arg = scale_filter(config.short_side_px)
+    filter_arg = profile.build_scale_filter(config.short_side_px)
 
     needs_fps_cap = False
     if config.max_fps is not None:
@@ -158,14 +149,12 @@ def transcode_video(
         if source_fps is not None and source_fps > config.max_fps:
             needs_fps_cap = True
 
-    has_filters = filter_arg is not None or needs_fps_cap
-
     command = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
         "info",
-        *profile.build_input_args(has_filters=has_filters),
+        *profile.build_input_args(),
         "-i",
         str(source),
     ]
