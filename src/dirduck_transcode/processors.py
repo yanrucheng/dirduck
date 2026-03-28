@@ -138,22 +138,29 @@ def transcode_video(
     source: Path, target: Path, config: TranscodeConfig, profile: VideoEncodeProfile,
 ) -> None:
     """Transcode a video file to HEVC using the selected encode profile."""
+    filter_arg = scale_filter(config.short_side_px)
+
+    needs_fps_cap = False
+    if config.max_fps is not None:
+        source_fps = probe_fps(source)
+        if source_fps is not None and source_fps > config.max_fps:
+            needs_fps_cap = True
+
+    has_filters = filter_arg is not None or needs_fps_cap
+
     command = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
         "info",
-        *profile.build_input_args(),
+        *profile.build_input_args(has_filters=has_filters),
         "-i",
         str(source),
     ]
-    filter_arg = scale_filter(config.short_side_px)
     if filter_arg:
         command.extend(["-vf", filter_arg])
-    if config.max_fps is not None:
-        source_fps = probe_fps(source)
-        if source_fps is not None and source_fps > config.max_fps:
-            command.extend(["-r", str(config.max_fps)])
+    if needs_fps_cap:
+        command.extend(["-r", str(config.max_fps)])
     command.extend(
         profile.build_encode_args(config.crf, config.preset, config.processing_threads)
     )

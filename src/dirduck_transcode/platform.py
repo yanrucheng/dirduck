@@ -124,8 +124,14 @@ class VideoEncodeProfile(ABC):
         """FFmpeg encoder name (e.g. 'libx265', 'hevc_videotoolbox')."""
 
     @abstractmethod
-    def build_input_args(self) -> list[str]:
-        """Return extra args placed *before* ``-i`` (e.g. hwaccel flags)."""
+    def build_input_args(self, *, has_filters: bool) -> list[str]:
+        """Return extra args placed *before* ``-i`` (e.g. hwaccel flags).
+
+        *has_filters* indicates whether the caller will insert ``-vf`` or
+        ``-r`` arguments.  Hardware profiles can use this to decide whether
+        decoded frames must be downloaded to system memory (filter-safe) or
+        can remain on the accelerator surface (zero-copy).
+        """
 
     @abstractmethod
     def build_encode_args(self, crf: int, preset: str, threads: int) -> list[str]:
@@ -147,7 +153,7 @@ class Libx265Profile(VideoEncodeProfile):
     def encoder(self) -> str:
         return "libx265"
 
-    def build_input_args(self) -> list[str]:
+    def build_input_args(self, *, has_filters: bool) -> list[str]:
         return []
 
     def build_encode_args(self, crf: int, preset: str, threads: int) -> list[str]:
@@ -191,11 +197,16 @@ def _crf_to_vt_quality(crf: int) -> int:
 class VideoToolboxProfile(VideoEncodeProfile):
     """Hardware HEVC encoding via Apple VideoToolbox on macOS.
 
-    Software decoding is used intentionally: the hardware decoder outputs
-    frames in ``nv12`` hardware surfaces that cause colour corruption (green
-    tint) when passed through software filters such as Lanczos scaling.
-    Apple Silicon's CPU decoder is fast enough, and ``hevc_videotoolbox``
-    provides the real speed-up on the encode side.
+    Two decode paths are selected automatically:
+
+    * **No filters** (no scaling, no FPS cap) – full zero-copy pipeline.
+      ``-hwaccel videotoolbox -hwaccel_output_format videotoolbox`` keeps
+      frames on hardware surfaces from decode through encode.
+    * **With filters** (Lanczos scaling or FPS cap) – hardware decode with
+      automatic surface download.  ``-hwaccel videotoolbox`` lets the media
+      engine decode, but FFmpeg copies frames to system memory before the
+      filter graph so software filters like Lanczos scaling work correctly
+      without colour corruption.
 
     The CRF value provided by the user is mapped to a VideoToolbox quality
     parameter (``-q:v``).
@@ -209,14 +220,17 @@ class VideoToolboxProfile(VideoEncodeProfile):
     def encoder(self) -> str:
         return "hevc_videotoolbox"
 
-    def build_input_args(self) -> list[str]:
-        return []
+    def build_input_args(self, *, has_filters: bool) -> list[str]:
+        if has_filters:
+            return ["-hwaccel", "videotoolbox"]
+        return ["-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox"]
 
     def build_encode_args(self, crf: int, preset: str, threads: int) -> list[str]:
         vt_quality = _crf_to_vt_quality(crf)
         return [
             "-c:v", "hevc_videotoolbox",
             "-q:v", str(vt_quality),
+            "-allow_sw", "0",
             "-pix_fmt", "yuv420p",
             "-profile:v", "main",
             "-tag:v", "hvc1",
