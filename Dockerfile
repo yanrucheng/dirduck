@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir uv
 RUN python -m venv /app/.venv
 ENV PATH="/app/.venv/bin:${PATH}"
 
-COPY pyproject.toml uv.lock README.md /app/
+COPY pyproject.toml uv.lock README.md VERSION /app/
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src /app/src
