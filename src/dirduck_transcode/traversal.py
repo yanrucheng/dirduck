@@ -6,6 +6,12 @@ from pathlib import Path
 
 from dirduck_transcode.media_types import is_image, is_video, replace_output_extension
 from dirduck_transcode.models import TranscodeConfig
+from dirduck_transcode.platform import (
+    VideoEncodeProfile,
+    detect_platform,
+    format_platform_summary,
+    select_encode_profile,
+)
 from dirduck_transcode.processors import process_file, verify_dependencies
 
 DEFAULT_SYSTEM_SKIP_EXACT_NAMES = frozenset(
@@ -153,7 +159,7 @@ def format_compression_rate(source_bytes: int, output_bytes: int) -> str:
     return f"{rate:.2f}%"
 
 
-def print_config(config: TranscodeConfig) -> None:
+def print_config(config: TranscodeConfig, profile: VideoEncodeProfile) -> None:
     resolution_description = (
         f" and resolution-{config.short_side_px}p" if config.short_side_px is not None else ""
     )
@@ -165,7 +171,9 @@ def print_config(config: TranscodeConfig) -> None:
         f"{resolution_description}{quality_description}"
     )
     print(f"Output path: {config.output_path}")
-    print(f"Video threads: {config.processing_threads}")
+    print(
+        f"Encode: {profile.description(config.crf, config.preset, config.processing_threads)}"
+    )
 
 
 def print_summary(stats: ProcessingStats) -> None:
@@ -231,14 +239,17 @@ def apply_result_to_stats(stats: ProcessingStats, result) -> None:
 
 
 def process_images_in_parallel(
-    image_tasks: list[tuple[Path, Path]], config: TranscodeConfig, stats: ProcessingStats
+    image_tasks: list[tuple[Path, Path]],
+    config: TranscodeConfig,
+    profile: VideoEncodeProfile,
+    stats: ProcessingStats,
 ) -> None:
     if not image_tasks:
         return
     worker_count = IMAGE_PARALLEL_WORKERS
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
-            executor.submit(process_file, source, target, config): (source, target)
+            executor.submit(process_file, source, target, config, profile): (source, target)
             for source, target in image_tasks
         }
         for future in as_completed(future_map):
@@ -248,7 +259,10 @@ def process_images_in_parallel(
 
 def run(config: TranscodeConfig) -> int:
     verify_dependencies()
-    print_config(config)
+    platform_info = detect_platform()
+    profile = select_encode_profile(platform_info)
+    print(format_platform_summary(platform_info, profile))
+    print_config(config, profile)
     config.output_path.mkdir(parents=True, exist_ok=True)
     stats = ProcessingStats()
     files = iterate_files(config.input_path)
@@ -300,13 +314,13 @@ def run(config: TranscodeConfig) -> int:
         print(f"Scheduling policy: pure image input, run up to {IMAGE_PARALLEL_WORKERS} images in parallel.")
 
     for file_path, output_file in video_tasks:
-        result = process_file(file_path, output_file, config)
+        result = process_file(file_path, output_file, config, profile)
         apply_result_to_stats(stats, result)
 
-    process_images_in_parallel(image_tasks, config, stats)
+    process_images_in_parallel(image_tasks, config, profile, stats)
 
     for file_path, output_file in other_tasks:
-        result = process_file(file_path, output_file, config)
+        result = process_file(file_path, output_file, config, profile)
         apply_result_to_stats(stats, result)
 
     print_summary(stats)

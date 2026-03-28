@@ -63,14 +63,14 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         "-p",
         "--video-preset",
         default="medium",
-        help="x265 preset for video encoding speed/efficiency tradeoff (for example: ultrafast, medium, slow).",
+        help="Encoder preset for speed/efficiency tradeoff. Used by libx265 (software); ignored when hardware encoder is selected.",
     )
     parser.add_argument(
         "-c",
         "--video-crf",
         type=int,
         default=32,
-        help="x265 Constant Rate Factor for video quality and size; lower values keep higher quality.",
+        help="Quality target (lower = higher quality). Mapped to CRF for libx265 or quality level for hardware encoders.",
     )
     parser.add_argument(
         "-s",
@@ -105,7 +105,7 @@ def parse_args(argv: list[str] | None = None) -> TranscodeConfig:
         "--threads",
         type=int,
         default=max(1, (os.cpu_count() or 1) - 1),
-        help="Maximum processing threads for video transcoding. Default is CPU cores minus one.",
+        help="Processing threads for software video encoding. Ignored when hardware encoder is selected. Default is CPU cores minus one.",
     )
     args = parser.parse_args(argv)
 

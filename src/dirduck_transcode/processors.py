@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dirduck_transcode.media_types import is_image, is_video
 from dirduck_transcode.models import TranscodeConfig
+from dirduck_transcode.platform import VideoEncodeProfile
 
 
 @dataclass(slots=True)
@@ -133,18 +134,16 @@ def probe_fps(source: Path) -> float | None:
         return None
 
 
-def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None:
-    """Transcode a video file to HEVC using libx265 with thread-pool-based parallelism."""
-    video_threads = max(1, config.processing_threads)
-    x265_params = (
-        f"pools={video_threads}:frame-threads={min(video_threads, 4)}"
-        f":wpp=1:lookahead-slices=4"
-    )
+def transcode_video(
+    source: Path, target: Path, config: TranscodeConfig, profile: VideoEncodeProfile,
+) -> None:
+    """Transcode a video file to HEVC using the selected encode profile."""
     command = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
         "info",
+        *profile.build_input_args(),
         "-i",
         str(source),
     ]
@@ -156,23 +155,9 @@ def transcode_video(source: Path, target: Path, config: TranscodeConfig) -> None
         if source_fps is not None and source_fps > config.max_fps:
             command.extend(["-r", str(config.max_fps)])
     command.extend(
-        [
-            "-c:v",
-            "libx265",
-            "-x265-params",
-            x265_params,
-            "-preset",
-            config.preset,
-            "-crf",
-            str(config.crf),
-            "-tag:v",
-            "hvc1",
-            "-c:a",
-            "copy",
-            str(target),
-            "-y",
-        ]
+        profile.build_encode_args(config.crf, config.preset, config.processing_threads)
     )
+    command.extend(["-c:a", "copy", str(target), "-y"])
     try:
         run_command(command)
     except KeyboardInterrupt:
@@ -199,13 +184,15 @@ def image_fallback_target(source: Path, target: Path) -> Path:
     return target.with_suffix(source_extension)
 
 
-def process_file(source: Path, target: Path, config: TranscodeConfig) -> FileProcessResult:
+def process_file(
+    source: Path, target: Path, config: TranscodeConfig, profile: VideoEncodeProfile,
+) -> FileProcessResult:
     kind = classify_file(source)
     source_size = source.stat().st_size
 
     if kind == "video":
         print(f"Transcoding video: {source}")
-        transcode_video(source, target, config)
+        transcode_video(source, target, config, profile)
         return FileProcessResult(
             kind=kind,
             action="transcoded",
